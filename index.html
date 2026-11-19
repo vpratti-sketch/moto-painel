@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Manutenção Motos</title>
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
+<style>
+  :root {
+    --fundo: #f1f5f9; --cartao: #ffffff; --texto: #0f172a; --suave: #64748b; --borda: #e2e8f0;
+    --ok: #16a34a; --atencao: #d97706; --vencido: #dc2626; --primaria: #ea580c; --barra: #e2e8f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fundo: #0b1220; --cartao: #131c2e; --texto: #e5e7eb; --suave: #94a3b8; --borda: #1f2a40;
+      --ok: #22c55e; --atencao: #f59e0b; --vencido: #f87171; --primaria: #fb923c; --barra: #1f2a40; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 8px; }
+  h1 { font-size: 20px; margin: 0; }
+  .selo { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--atencao); color: #fff; margin-left: 8px; vertical-align: middle; }
+  .sub { color: var(--suave); font-size: 13px; margin: 0 0 12px; }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; background: var(--primaria); color: #fff; font-weight: 600; }
+  button.leve { background: transparent; color: var(--primaria); border: 1px solid var(--borda); }
+  button:disabled { opacity: .5; }
+  .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .topo { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .placa { font-size: 20px; font-weight: 800; letter-spacing: .5px; }
+  .odo { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .info { color: var(--suave); font-size: 13px; margin: 4px 0 10px; }
+  .alerta { color: var(--vencido); font-weight: 600; }
+  .servico { padding: 10px 0; border-top: 1px solid var(--borda); }
+  .linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .nome { font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--suave); }
+  .barra { height: 8px; background: var(--barra); border-radius: 99px; overflow: hidden; margin: 6px 0; }
+  .barra > i { display: block; height: 100%; border-radius: 99px; background: var(--ok); }
+  .s-atencao .barra > i { background: var(--atencao); }
+  .s-vencido .barra > i { background: var(--vencido); }
+  .s-vencido .nome::after { content: " • VENCIDO"; color: var(--vencido); font-size: 12px; }
+  .servico button { padding: 6px 12px; font-size: 14px; }
+  .aviso { background: var(--cartao); border: 1px solid var(--borda); border-left: 4px solid var(--primaria); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; }
+  .erro { border-left-color: var(--vencido); }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 12px 0 4px; }
+  input { width: 100%; font: inherit; padding: 10px; border-radius: 10px; border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); }
+  .ajuda { color: var(--suave); font-size: 13px; }
+  .acoes { display: flex; gap: 8px; margin: 4px 0 14px; }
+  .acoes button { flex: 1; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏍️ Manutenção <span id="selo" class="selo" hidden>TESTE</span></h1>
+  <button class="leve" id="btnConfig" aria-label="Configurações">⚙️</button>
+</header>
+<p class="sub" id="sub">Carregando…</p>
+<div id="msg"></div>
+
+<section id="telaConfig" class="cartao" hidden>
+  <strong>Configurar acesso</strong>
+  <p class="ajuda">Feito uma vez só. Fica guardado apenas neste celular.</p>
+  <label for="cDono">Seu usuário do GitHub</label>
+  <input id="cDono" autocapitalize="off" autocomplete="off" placeholder="ex.: joaosilva">
+  <label for="cRepo">Nome do repositório (privado)</label>
+  <input id="cRepo" autocapitalize="off" autocomplete="off" value="moto-manutencao">
+  <label for="cToken">Token do GitHub</label>
+  <input id="cToken" type="password" autocomplete="off" placeholder="github_pat_…">
+  <p class="ajuda">Token "fine-grained" só para esse repositório, com permissões <b>Contents: Read</b> e <b>Actions: Read and write</b>.</p>
+  <div class="acoes"><button id="btnSalvar">Salvar</button></div>
+</section>
+
+<div class="acoes" id="barraAcoes" hidden>
+  <button class="leve" id="btnAtualizar">↻ Atualizar</button>
+  <button id="btnVerificar">Verificar agora</button>
+</div>
+<main id="lista"></main>
+
+<script src="app.js"></script>
+</body>
+</html>
