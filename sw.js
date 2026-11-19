@@ -1,5 +1,5 @@
 // Guarda os arquivos do painel para abrir rápido. Dados do GitHub nunca são guardados.
-const CACHE = 'motos-v4';
+const CACHE = 'motos-v5';
 const ARQUIVOS = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icone-192.png', 'icone-512.png'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ARQUIVOS)).then(() => self.skipWaiting())));

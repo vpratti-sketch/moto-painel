@@ -2,7 +2,7 @@
 // ação "Monitor de manutenção" para dar baixa ou trocar o locatário.
 // Fala direto com a API do GitHub.
 
-const SERVICOS = { oleo: 'Troca de óleo', revisao: 'Revisão', pneu: 'Troca de pneu' };
+const SERVICOS = { oleo: 'Troca de óleo', revisao: 'Revisão', pneuDianteiro: 'Pneu dianteiro', pneuTraseiro: 'Pneu traseiro' };
 const WORKFLOW = 'monitor.yml';
 const $ = (id) => document.getElementById(id);
 
