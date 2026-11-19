@@ -50,6 +50,10 @@
   .ajuda { color: var(--suave); font-size: 13px; }
   .acoes { display: flex; gap: 8px; margin: 4px 0 14px; }
   .acoes button { flex: 1; }
+  .fundo-escuro { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: flex-end; justify-content: center; padding: 16px; z-index: 10; }
+  .folha { background: var(--cartao); color: var(--texto); border-radius: 16px; padding: 18px; width: 100%; max-width: 480px; margin-bottom: env(safe-area-inset-bottom); }
+  .folha h2 { font-size: 18px; margin: 0 0 8px; }
+  .folha p { margin: 0 0 16px; color: var(--suave); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -79,6 +83,17 @@
   <button id="btnVerificar">Verificar agora</button>
 </div>
 <main id="lista"></main>
+
+<div class="fundo-escuro" id="confirmar" hidden>
+  <div class="folha" role="dialog" aria-modal="true" aria-labelledby="confTitulo">
+    <h2 id="confTitulo"></h2>
+    <p id="confTexto"></p>
+    <div class="acoes">
+      <button class="leve" id="confNao">Cancelar</button>
+      <button id="confSim">Confirmar baixa</button>
+    </div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

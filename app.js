@@ -143,12 +143,31 @@ $('btnSalvar').onclick = () => {
 };
 $('btnAtualizar').onclick = carregar;
 $('btnVerificar').onclick = () => disparar();
-$('lista').onclick = (ev) => {
+// Confirmação desenhada no próprio painel (a caixa confirm() do navegador
+// é bloqueada em alguns celulares quando o site está instalado como app).
+function perguntar(titulo, texto) {
+  return new Promise((resolver) => {
+    $('confTitulo').textContent = titulo;
+    $('confTexto').textContent = texto;
+    $('confirmar').hidden = false;
+    const fechar = (resposta) => {
+      $('confirmar').hidden = true;
+      $('confSim').onclick = $('confNao').onclick = $('confirmar').onclick = null;
+      resolver(resposta);
+    };
+    $('confSim').onclick = () => fechar(true);
+    $('confNao').onclick = () => fechar(false);
+    $('confirmar').onclick = (ev) => { if (ev.target === $('confirmar')) fechar(false); };
+  });
+}
+
+$('lista').onclick = async (ev) => {
   const b = ev.target.closest('button[data-placa]');
-  if (!b) return;
+  if (!b || b.disabled) return;
   const { placa, srv } = b.dataset;
-  const nome = srv === 'todos' ? 'TODOS os serviços' : SERVICOS[srv];
-  if (confirm(`Dar baixa em "${nome}" da ${placa}?\n\nO odômetro atual vira a nova base e a contagem recomeça do zero.`)) disparar(placa, srv);
+  const nome = srv === 'todos' ? 'todos os serviços' : SERVICOS[srv];
+  const ok = await perguntar(`Dar baixa: ${nome}`, `Moto ${placa}. O odômetro atual vira a nova base e a contagem recomeça do zero.`);
+  if (ok) disparar(placa, srv);
 };
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
