@@ -61,32 +61,50 @@ async function carregar() {
   }
 }
 
-// Serviços vencidos de uma moto: [{ srv, rodado, limite }]
-function vencidosDe(m, limites) {
+// 0 ok · 1 prestes a vencer · 2 vencido (mesma regra do robô)
+const nivelDo = (rodado, limite, antecedencia = 0) =>
+  rodado >= limite ? 2 : antecedencia > 0 && rodado >= limite - antecedencia ? 1 : 0;
+
+// Serviços vencidos ou prestes a vencer: [{ srv, rodado, limite, faltam, nivel }]
+function pendentesDe(m, limites, antecedencia) {
   if (m?.odometro == null) return [];
   return Object.entries(limites)
     .map(([srv, limite]) => ({ srv, limite, base: m.servicos?.[srv]?.base }))
-    .filter((x) => x.base != null && m.odometro - x.base >= x.limite)
-    .map((x) => ({ ...x, rodado: m.odometro - x.base }));
+    .filter((x) => x.base != null)
+    .map((x) => {
+      const rodado = Math.max(0, m.odometro - x.base);
+      return { ...x, rodado, faltam: x.limite - rodado, nivel: nivelDo(rodado, x.limite, antecedencia[x.srv]) };
+    })
+    .filter((x) => x.nivel > 0);
 }
 
-// Mesmo texto que o robô manda para o locatário.
-function textoParaLocatario(placa, m, limites) {
-  const nome = m.locatario?.nome ? `, ${m.locatario.nome.split(' ')[0]}` : '';
-  const itens = vencidosDe(m, limites).map((v) => `• ${SERVICOS[v.srv]}: ${km(v.rodado)} desde a última (limite ${km(v.limite)})`);
-  return `Olá${nome}! 🏍️ A moto *${placa}* que está com você precisa de manutenção:\n` +
-    `Odômetro atual: ${km(m.odometro)}\n${itens.join('\n')}\n\nPor favor, entre em contato para agendar.`;
+// Mesmo texto que o robô manda para o locatário (vem do config.json).
+function textoParaLocatario(placa, m, config, modo) {
+  const textos = config.mensagensLocatario || {};
+  const modelo = config.modelos?.[placa] || config.modeloPadrao || 'moto';
+  const pend = pendentesDe(m, config.intervalos[modo], config.antecedenciaKm?.[modo] || {});
+  const temRevisao = pend.some((p) => p.srv === 'revisao');
+  return pend
+    .filter((p) => !(p.srv === 'oleo' && temRevisao && config.revisaoIncluiOleo))
+    .map((p) => {
+      const f = Math.round(p.faltam);
+      const situacao = f > 0 ? `está prestes a vencer — faltam ${km(f)}` : `já venceu — passou ${km(-f)} do limite`;
+      const base = textos[p.srv] || `Olá! ${SERVICOS[p.srv]} da moto {modelo} (placa {placa}) {situacao}.`;
+      return base.replace(/\{(\w+)\}/g, (t, k) => ({ placa, modelo, limite: km(p.limite), situacao }[k] ?? t));
+    })
+    .join('\n\n');
 }
 
-function blocoLocatario(placa, m, limites) {
+function blocoLocatario(placa, m, config, modo) {
   const loc = m.locatario;
   if (!loc?.telefone) {
     return `<div class="servico"><div class="linha"><span class="nome">👤 Locatário</span>
       <button class="leve" data-acao="locatario" data-placa="${esc(placa)}">Cadastrar</button></div>
       <div class="num">Nenhum cadastrado</div></div>`;
   }
-  const venc = vencidosDe(m, limites).length > 0;
-  const zap = `https://wa.me/${loc.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(textoParaLocatario(placa, m, limites))}`;
+  const texto = textoParaLocatario(placa, m, config, modo);
+  const venc = texto.length > 0;
+  const zap = `https://wa.me/${loc.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`;
   return `<div class="servico"><div class="linha"><span class="nome">👤 ${esc(loc.nome || 'Locatário')}</span>
       <button class="leve" data-acao="locatario" data-placa="${esc(placa)}">Trocar</button></div>
     <div class="num">${esc(fmtTel(loc.telefone))} · ${loc.apikey ? 'recebe aviso automático' : 'sem aviso automático'} · desde ${quando(loc.desde)}</div>
@@ -99,6 +117,7 @@ function desenhar(estado, config) {
   $('selo').hidden = modo !== 'teste';
   $('sub').textContent = `Última verificação: ${quando(estado.atualizadoEm)}`;
   const limites = config.intervalos[modo];
+  const antecedencia = config.antecedenciaKm?.[modo] || {};
   const avisos = [];
   if (estado.falhaGeral) avisos.push(`⚠️ Última leitura do iTrack falhou: ${esc(estado.falhaGeral.erro)}`);
   if (!estado.motos) avisos.push('Ainda não houve nenhuma verificação. Toque em <b>Verificar agora</b>.');
@@ -115,7 +134,7 @@ function desenhar(estado, config) {
       }
       const rodado = Math.max(0, m.odometro - s.base);
       const pct = Math.min(100, (rodado / limite) * 100);
-      const classe = rodado >= limite ? 's-vencido' : pct >= 80 ? 's-atencao' : '';
+      const classe = ['', 's-atencao', 's-vencido'][nivelDo(rodado, limite, antecedencia[srv])];
       const falta = limite - rodado;
       return `<div class="servico ${classe}">
         <div class="linha"><span class="nome">${SERVICOS[srv]}</span>
@@ -130,7 +149,7 @@ function desenhar(estado, config) {
     return `<article class="cartao">
       <div class="topo"><span class="placa">${esc(placa)}</span><span class="odo">${m.odometro != null ? km(m.odometro) : '—'}</span></div>
       <div class="info">Última posição: ${quando(m.ultimaPosicao)}</div>${semSinal}${erro}
-      ${blocoLocatario(placa, m, limites)}
+      ${blocoLocatario(placa, m, config, modo)}
       ${servicos}
       <div class="servico"><button class="leve" data-acao="baixa" data-placa="${esc(placa)}" data-srv="todos">Dar baixa em tudo desta moto</button></div>
     </article>`;
