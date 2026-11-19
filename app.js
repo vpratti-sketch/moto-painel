@@ -1,5 +1,6 @@
 // Painel no celular: lê data/estado.json do repositório privado e dispara a
-// ação "Monitor de manutenção" para dar baixa. Fala direto com a API do GitHub.
+// ação "Monitor de manutenção" para dar baixa ou trocar o locatário.
+// Fala direto com a API do GitHub.
 
 const SERVICOS = { oleo: 'Troca de óleo', revisao: 'Revisão', pneu: 'Troca de pneu' };
 const WORKFLOW = 'monitor.yml';
@@ -10,10 +11,16 @@ const guardar = {
   salvar(v) { try { localStorage.setItem('painelMotos', JSON.stringify(v)); } catch {} },
 };
 let cfg = guardar.ler();
+let ultimoEstado = null;
+let ultimaConfig = null;
 
 const km = (v) => (Math.round(v * 10) / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' km';
 const quando = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtTel = (t) => {
+  const d = String(t || '').replace(/\D/g, '').replace(/^55/, '');
+  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : t;
+};
 
 function mostrarMsg(texto, erro = false) {
   $('msg').innerHTML = texto ? `<div class="aviso ${erro ? 'erro' : ''}">${texto}</div>` : '';
@@ -44,12 +51,47 @@ async function carregar() {
   $('sub').textContent = 'Carregando…';
   try {
     const [estado, config] = await Promise.all([lerArquivo('data/estado.json'), lerArquivo('config.json')]);
+    ultimoEstado = estado;
+    ultimaConfig = config;
     desenhar(estado, config);
     $('barraAcoes').hidden = false;
   } catch (e) {
     $('sub').textContent = '';
     mostrarMsg('Não consegui carregar: ' + esc(e.message), true);
   }
+}
+
+// Serviços vencidos de uma moto: [{ srv, rodado, limite }]
+function vencidosDe(m, limites) {
+  if (m?.odometro == null) return [];
+  return Object.entries(limites)
+    .map(([srv, limite]) => ({ srv, limite, base: m.servicos?.[srv]?.base }))
+    .filter((x) => x.base != null && m.odometro - x.base >= x.limite)
+    .map((x) => ({ ...x, rodado: m.odometro - x.base }));
+}
+
+// Mesmo texto que o robô manda para o locatário.
+function textoParaLocatario(placa, m, limites) {
+  const nome = m.locatario?.nome ? `, ${m.locatario.nome.split(' ')[0]}` : '';
+  const itens = vencidosDe(m, limites).map((v) => `• ${SERVICOS[v.srv]}: ${km(v.rodado)} desde a última (limite ${km(v.limite)})`);
+  return `Olá${nome}! 🏍️ A moto *${placa}* que está com você precisa de manutenção:\n` +
+    `Odômetro atual: ${km(m.odometro)}\n${itens.join('\n')}\n\nPor favor, entre em contato para agendar.`;
+}
+
+function blocoLocatario(placa, m, limites) {
+  const loc = m.locatario;
+  if (!loc?.telefone) {
+    return `<div class="servico"><div class="linha"><span class="nome">👤 Locatário</span>
+      <button class="leve" data-acao="locatario" data-placa="${esc(placa)}">Cadastrar</button></div>
+      <div class="num">Nenhum cadastrado</div></div>`;
+  }
+  const venc = vencidosDe(m, limites).length > 0;
+  const zap = `https://wa.me/${loc.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(textoParaLocatario(placa, m, limites))}`;
+  return `<div class="servico"><div class="linha"><span class="nome">👤 ${esc(loc.nome || 'Locatário')}</span>
+      <button class="leve" data-acao="locatario" data-placa="${esc(placa)}">Trocar</button></div>
+    <div class="num">${esc(fmtTel(loc.telefone))} · ${loc.apikey ? 'recebe aviso automático' : 'sem aviso automático'} · desde ${quando(loc.desde)}</div>
+    ${venc ? `<a class="botao-zap" href="${zap}" target="_blank" rel="noopener">Avisar ${esc((loc.nome || 'locatário').split(' ')[0])} pelo WhatsApp</a>` : ''}
+  </div>`;
 }
 
 function desenhar(estado, config) {
@@ -60,9 +102,10 @@ function desenhar(estado, config) {
   const avisos = [];
   if (estado.falhaGeral) avisos.push(`⚠️ Última leitura do iTrack falhou: ${esc(estado.falhaGeral.erro)}`);
   if (!estado.motos) avisos.push('Ainda não houve nenhuma verificação. Toque em <b>Verificar agora</b>.');
-  if (avisos.length) mostrarMsg(avisos.join('<br>'));
+  mostrarMsg(avisos.join('<br>'));
 
-  $('lista').innerHTML = config.placas.map((placa) => {
+  const placas = [...new Set([...(estado.placas || []), ...config.placas])];
+  $('lista').innerHTML = placas.map((placa) => {
     const m = estado.motos?.[placa] || { servicos: {} };
     const servicos = Object.keys(limites).map((srv) => {
       const s = m.servicos?.[srv];
@@ -76,7 +119,7 @@ function desenhar(estado, config) {
       const falta = limite - rodado;
       return `<div class="servico ${classe}">
         <div class="linha"><span class="nome">${SERVICOS[srv]}</span>
-          <button data-placa="${esc(placa)}" data-srv="${srv}">Dar baixa</button></div>
+          <button data-acao="baixa" data-placa="${esc(placa)}" data-srv="${srv}">Dar baixa</button></div>
         <div class="barra"><i style="width:${pct.toFixed(1)}%"></i></div>
         <div class="num">${km(rodado)} de ${km(limite)} · ${falta > 0 ? 'faltam ' + km(falta) : 'passou ' + km(-falta)}<br>
           última em ${km(s.base)} (${quando(s.baseEm)})</div>
@@ -87,30 +130,32 @@ function desenhar(estado, config) {
     return `<article class="cartao">
       <div class="topo"><span class="placa">${esc(placa)}</span><span class="odo">${m.odometro != null ? km(m.odometro) : '—'}</span></div>
       <div class="info">Última posição: ${quando(m.ultimaPosicao)}</div>${semSinal}${erro}
+      ${blocoLocatario(placa, m, limites)}
       ${servicos}
-      <div class="servico"><button class="leve" data-placa="${esc(placa)}" data-srv="todos">Dar baixa em tudo desta moto</button></div>
+      <div class="servico"><button class="leve" data-acao="baixa" data-placa="${esc(placa)}" data-srv="todos">Dar baixa em tudo desta moto</button></div>
     </article>`;
   }).join('');
 }
 
-async function disparar(placa = '', servico = '') {
+// Dispara o robô no GitHub com os dados do pedido e espera terminar.
+async function disparar(inputs, textoEspera, textoOk) {
   const botoes = document.querySelectorAll('button');
   botoes.forEach((b) => (b.disabled = true));
   const inicio = new Date(Date.now() - 5000).toISOString();
+  let resultado = [textoOk, false];
   try {
     await api(`/actions/workflows/${WORKFLOW}/dispatches`, {
       method: 'POST',
-      body: JSON.stringify({ ref: cfg.ramo || 'main', inputs: { placa, servico } }),
+      body: JSON.stringify({ ref: cfg.ramo || 'main', inputs }),
     });
-    mostrarMsg(placa ? `Baixa enviada para ${esc(placa)}. Aguardando o robô (≈1 min)…` : 'Verificação pedida. Aguardando o robô (≈1 min)…');
+    mostrarMsg(`${textoEspera} Aguardando o robô (≈1 min)…`);
     await esperarExecucao(inicio);
-    mostrarMsg(placa ? '✅ Baixa registrada.' : '✅ Verificação concluída.');
   } catch (e) {
-    mostrarMsg(esc(e.message), true);
-  } finally {
-    botoes.forEach((b) => (b.disabled = false));
-    carregar();
+    resultado = [esc(e.message), true];
   }
+  botoes.forEach((b) => (b.disabled = false));
+  await carregar();
+  mostrarMsg(...resultado); // depois de recarregar, para a mensagem não sumir
 }
 
 async function esperarExecucao(desde) {
@@ -134,6 +179,50 @@ function abrirConfig() {
   $('sub').textContent = '';
 }
 
+// Folhas que sobem de baixo (a caixa confirm() do navegador é bloqueada
+// em alguns celulares quando o site está instalado como app).
+function abrirFolha(id, botoes) {
+  return new Promise((resolver) => {
+    const fundo = $(id);
+    fundo.hidden = false;
+    const fechar = (resposta) => {
+      fundo.hidden = true;
+      for (const b of Object.keys(botoes)) $(b).onclick = null;
+      fundo.onclick = null;
+      resolver(resposta);
+    };
+    for (const [b, resposta] of Object.entries(botoes)) $(b).onclick = () => fechar(resposta);
+    fundo.onclick = (ev) => { if (ev.target === fundo) fechar(null); };
+  });
+}
+
+function perguntar(titulo, texto) {
+  $('confTitulo').textContent = titulo;
+  $('confTexto').textContent = texto;
+  return abrirFolha('confirmar', { confSim: true, confNao: false });
+}
+
+async function editarLocatario(placa) {
+  const loc = ultimoEstado?.motos?.[placa]?.locatario;
+  $('locTitulo').textContent = `Locatário da ${placa}`;
+  $('locNome').value = loc?.nome || '';
+  $('locTel').value = loc?.telefone ? fmtTel(loc.telefone) : '';
+  $('locApikey').value = loc?.apikey || '';
+  $('locRemover').hidden = !loc?.telefone;
+  const r = await abrirFolha('folhaLocatario', { locSalvar: 'salvar', locRemover: 'remover', locCancelar: null });
+  if (r === 'remover') {
+    disparar({ acao: 'locatario', placa, nome: '', telefone: '', apikey: '' }, `Removendo locatário da ${esc(placa)}.`, '✅ Locatário removido.');
+  } else if (r === 'salvar') {
+    const telefone = $('locTel').value.replace(/\D/g, '');
+    if (telefone.length < 10) return mostrarMsg('Celular inválido: use DDD + número, ex.: 27 99999-1234.', true);
+    disparar(
+      { acao: 'locatario', placa, nome: $('locNome').value.trim(), telefone, apikey: $('locApikey').value.trim() },
+      `Salvando locatário da ${esc(placa)}.`,
+      '✅ Locatário salvo.' + ($('locApikey').value.trim() ? ' Ele deve receber uma mensagem de boas-vindas.' : ''),
+    );
+  }
+}
+
 $('btnConfig').onclick = () => ($('telaConfig').hidden ? abrirConfig() : ($('telaConfig').hidden = true));
 $('btnSalvar').onclick = () => {
   cfg = { ...cfg, dono: $('cDono').value.trim(), repo: $('cRepo').value.trim(), token: $('cToken').value.trim() };
@@ -142,32 +231,15 @@ $('btnSalvar').onclick = () => {
   carregar();
 };
 $('btnAtualizar').onclick = carregar;
-$('btnVerificar').onclick = () => disparar();
-// Confirmação desenhada no próprio painel (a caixa confirm() do navegador
-// é bloqueada em alguns celulares quando o site está instalado como app).
-function perguntar(titulo, texto) {
-  return new Promise((resolver) => {
-    $('confTitulo').textContent = titulo;
-    $('confTexto').textContent = texto;
-    $('confirmar').hidden = false;
-    const fechar = (resposta) => {
-      $('confirmar').hidden = true;
-      $('confSim').onclick = $('confNao').onclick = $('confirmar').onclick = null;
-      resolver(resposta);
-    };
-    $('confSim').onclick = () => fechar(true);
-    $('confNao').onclick = () => fechar(false);
-    $('confirmar').onclick = (ev) => { if (ev.target === $('confirmar')) fechar(false); };
-  });
-}
-
+$('btnVerificar').onclick = () => disparar({ acao: '' }, 'Verificação pedida.', '✅ Verificação concluída.');
 $('lista').onclick = async (ev) => {
-  const b = ev.target.closest('button[data-placa]');
+  const b = ev.target.closest('button[data-acao]');
   if (!b || b.disabled) return;
-  const { placa, srv } = b.dataset;
+  const { acao, placa, srv } = b.dataset;
+  if (acao === 'locatario') return editarLocatario(placa);
   const nome = srv === 'todos' ? 'todos os serviços' : SERVICOS[srv];
   const ok = await perguntar(`Dar baixa: ${nome}`, `Moto ${placa}. O odômetro atual vira a nova base e a contagem recomeça do zero.`);
-  if (ok) disparar(placa, srv);
+  if (ok) disparar({ acao: 'baixa', placa, servico: srv }, `Baixa enviada para ${esc(placa)}.`, '✅ Baixa registrada.');
 };
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

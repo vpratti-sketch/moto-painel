@@ -54,6 +54,10 @@
   .folha { background: var(--cartao); color: var(--texto); border-radius: 16px; padding: 18px; width: 100%; max-width: 480px; margin-bottom: env(safe-area-inset-bottom); }
   .folha h2 { font-size: 18px; margin: 0 0 8px; }
   .folha p { margin: 0 0 16px; color: var(--suave); }
+  .folha { max-height: 90vh; overflow-y: auto; }
+  .folha .ajuda { margin: 8px 0 12px; }
+  .perigo { width: 100%; color: var(--vencido); }
+  .botao-zap { display: block; text-align: center; margin-top: 8px; padding: 10px 14px; border-radius: 10px; background: #25d366; color: #073b1c; font-weight: 700; text-decoration: none; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -92,6 +96,24 @@
       <button class="leve" id="confNao">Cancelar</button>
       <button id="confSim">Confirmar baixa</button>
     </div>
+  </div>
+</div>
+
+<div class="fundo-escuro" id="folhaLocatario" hidden>
+  <div class="folha" role="dialog" aria-modal="true" aria-labelledby="locTitulo">
+    <h2 id="locTitulo">Locatário</h2>
+    <label for="locNome">Nome</label>
+    <input id="locNome" autocomplete="off" placeholder="ex.: Carlos Souza">
+    <label for="locTel">Celular (com DDD)</label>
+    <input id="locTel" type="tel" inputmode="tel" autocomplete="off" placeholder="ex.: 27 99999-1234">
+    <label for="locApikey">Apikey do CallMeBot (opcional)</label>
+    <input id="locApikey" inputmode="numeric" autocomplete="off" placeholder="só se ele ativou o CallMeBot">
+    <p class="ajuda">Com apikey, ele recebe os avisos sozinho. Sem apikey, aparece um botão para você avisar pelo seu WhatsApp.</p>
+    <div class="acoes">
+      <button class="leve" id="locCancelar">Cancelar</button>
+      <button id="locSalvar">Salvar</button>
+    </div>
+    <button class="leve perigo" id="locRemover">Remover locatário (moto devolvida)</button>
   </div>
 </div>
 
